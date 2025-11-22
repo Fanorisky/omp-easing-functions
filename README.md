@@ -18,6 +18,25 @@ The include defines the `BigInt` tag plus helpers such as `new_bigint`, `BigInt_
 
 new_bigint(g_BankBalance[MAX_PLAYERS]);
 
+/*
+ Or if you want to use the common way of creating variables:
+ 
+     new g_BankBalance[MAX_PLAYERS][eBigIntParts];
+
+     new TestVar[eBigIntParts];
+ or
+     new_bigint(TestVar);
+
+ or in your enum:
+     enum PLAYER_DATA
+     {
+        ...
+        BankMoney[eBigIntParts],
+        ...
+     };
+*/
+ 
+
 public OnPlayerConnect(playerid)
 {
     BigInt_SetInt(g_BankBalance[playerid], 0);
