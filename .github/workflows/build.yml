@@ -52,11 +52,11 @@ jobs:
             docker/build/**/*.so
             docker/build/*.so
 
-
   windows-cross:
     name: Build Windows .dll (MinGW 32-bit)
     runs-on: ubuntu-latest
-    needs: linux-docker  # Opsional, hapus jika tidak diperlukan
+    # Hapus komentar di bawah jika ingin paralel dengan linux-docker
+    # needs: linux-docker  # Opsional, hanya jika Windows build memerlukan output dari Linux
 
     steps:
       - name: Checkout repository (with submodules)
@@ -79,17 +79,16 @@ jobs:
 
       - name: Verify MinGW installation
         run: |
-          # Check compiler versions
-          i686-w64-mingw32-gcc --version || echo "gcc not found"
-          i686-w64-mingw32-g++ --version || echo "g++ not found"
-          i686-w64-mingw32-windres --version || echo "windres not found"
-          
-          # List available compilers
-          ls -la /usr/bin/*-mingw32-*
+          echo "=== Checking MinGW compilers ==="
+          i686-w64-mingw32-gcc --version || echo "Warning: gcc not found"
+          i686-w64-mingw32-g++ --version || echo "Warning: g++ not found"
+          i686-w64-mingw32-windres --version || echo "Warning: windres not found"
 
       - name: Configure Windows 32-bit build
         run: |
-          # Configure dengan toolchain 32-bit
+          echo "=== Configuring for Windows 32-bit ==="
+          
+          # Configure CMake dengan flag untuk disable NEON dan enable SSE2
           cmake -S . -B build-win32 \
             -G Ninja \
             -DCMAKE_SYSTEM_NAME=Windows \
@@ -97,14 +96,26 @@ jobs:
             -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++ \
             -DCMAKE_RC_COMPILER=i686-w64-mingw32-windres \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_FIND_ROOT_PATH=/usr/i686-w64-mingw32
+            -DCMAKE_CXX_FLAGS="-UGLM_FORCE_NEON -DGLM_FORCE_SSE2 -m32 -msse2 -mfpmath=sse" \
+            -DCMAKE_C_FLAGS="-UGLM_FORCE_NEON -m32 -msse2 -mfpmath=sse" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++ -m32" \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -m32"
 
       - name: Build Windows 32-bit DLL
         run: |
-          cmake --build build-win32 --config Release --parallel
+          echo "=== Building Windows DLL ==="
           
-          # List built files
-          find build-win32 -name "*.dll" -o -name "*.exe" | xargs -I {} file {} || true
+          # Build dengan parallel jobs
+          cmake --build build-win32 --config Release --parallel $(nproc)
+          
+          echo "=== Build completed ==="
+          
+          # List all generated files
+          echo "Generated files:"
+          find build-win32 -name "*.dll" -o -name "*.exe" | while read f; do
+            echo "- $f"
+            file "$f" || true
+          done
 
       - name: Upload Windows 32-bit .dll artifacts
         uses: actions/upload-artifact@v4
@@ -113,3 +124,4 @@ jobs:
           path: |
             build-win32/**/*.dll
             build-win32/*.dll
+          if-no-files-found: error
