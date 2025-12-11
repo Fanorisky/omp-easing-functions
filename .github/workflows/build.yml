@@ -6,71 +6,98 @@ on:
       - "v*"
   workflow_dispatch:
 
-jobs:
-  linux:
-    name: Build Linux .so
-    runs-on: ubuntu-latest
+env:
+  CONFIG: Release
+  BUILD_SERVER: "1"
 
+jobs:
+  linux-docker:
+    name: Build Linux .so (Docker)
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Prepare build folder (owner uid 1000 required by container)
         run: |
-          sudo apt update
-          sudo apt install -y cmake build-essential
+          mkdir -p build
+          # make sure uid:gid 1000:1000 owns it so container's 'user' can write
+          sudo chown 1000:1000 build
 
-      - name: Configure
+      - name: Build Docker image (Ubuntu 18.04 builder)
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          docker build -t omp-easing-functions/build:ubuntu-18.04 docker/build_ubuntu-18.04/
 
-      - name: Build
+      - name: Run build inside Docker container
+        env:
+          CONFIG: ${{ env.CONFIG }}
+          BUILD_SERVER: ${{ env.BUILD_SERVER }}
         run: |
-          cmake --build build --config Release --parallel
+          docker run --rm -t \
+            -w /code \
+            -v "${{ github.workspace }}:/code" \
+            -v "${{ github.workspace }}/build:/code/build" \
+            -e CONFIG=${CONFIG} \
+            -e BUILD_SERVER=${BUILD_SERVER} \
+            omp-easing-functions/build:ubuntu-18.04
 
-      - name: Find .so
+      - name: List build output
         run: |
-          find build -name "*.so" -print
+          echo "build/ listing:"
+          ls -la build || true
+          echo ".so files (if any):"
+          find build -type f -name "*.so" -print || true
 
-      - name: Upload .so artifact
+      - name: Upload Linux .so artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-so
           path: |
             build/**/*.so
+            build/*.so
 
-  windows:
-    name: Build Windows .dll
+  windows-cross:
+    name: Build Windows .dll (MinGW cross)
     runs-on: ubuntu-latest
-
+    needs: linux-docker
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install MinGW
+      - name: Install cross toolchain and build deps
         run: |
-          sudo apt update
-          sudo apt install -y mingw-w64 cmake
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mingw-w64 \
+            cmake \
+            ninja-build \
+            build-essential
 
-      - name: Configure cross compile
+      - name: Configure CMake for MinGW (x86_64)
         run: |
-          cmake -B build-win \
+          mkdir -p build-win
+          cmake -S . -B build-win \
+            -G Ninja \
             -DCMAKE_SYSTEM_NAME=Windows \
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
             -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
             -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build
+      - name: Build with CMake (MinGW)
         run: |
           cmake --build build-win --config Release --parallel
 
-      - name: Find .dll
+      - name: List build-win outputs
         run: |
-          find build-win -name "*.dll" -print
+          echo "build-win/ listing:"
+          ls -la build-win || true
+          echo ".dll files (if any):"
+          find build-win -type f -name "*.dll" -print || true
 
-      - name: Upload .dll artifact
+      - name: Upload Windows .dll artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-dll
           path: |
             build-win/**/*.dll
+            build-win/*.dll
