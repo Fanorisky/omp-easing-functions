@@ -61,7 +61,7 @@ native PlayerText_MoveToX(playerid, PlayerText:textdraw, Float:x, duration, ease
 native PlayerText_MoveToY(playerid, PlayerText:textdraw, Float:y, duration, easeType, bool:silent = false);
 native PlayerText_MoveLetterSize(playerid, PlayerText:textdraw, Float:y, duration, easeType, bool:silent = false);
 native PlayerText_MoveTextSizeX(playerid, PlayerText:textdraw, Float:x, duration, easeType, bool:silent = false);
-native PlayerText_MoveTextSizeY(playerid, PlayerText:textdraw, Float:x, duration, easeType, bool:silent = false);
+native PlayerText_MoveTextSizeY(playerid, PlayerText:textdraw, Float:y, duration, easeType, bool:silent = false);
 native PlayerText_MoveSize(playerid, PlayerText:textdraw, Float:x, Float:y, duration, easeType, bool:silent = false);
 native PlayerText_InterpolateColor(playerid, PlayerText:textdraw, color, duration, easeType, bool:silent = false);
 native PlayerText_InterpolateBoxColor(playerid, PlayerText:textdraw, color, duration, easeType, bool:silent = false);
