@@ -17,14 +17,13 @@
 #include <algorithm>
 
 namespace Config {
-    // capacity settings so shit don't explode
-    static constexpr int MAX_ANIMATIONS = 2048;      // concurrent animations
-    static constexpr int EXPECTED_PLAYERS = 512;     // pre-allocate for 512 players :D
+    static constexpr int EXPECTED_PLAYERS = 512;         // player count hint for pre-alloc
+    static constexpr int INITIAL_ANIM_CAPACITY = 64;    // starting vector capacity, grows on demand
     
     // performance tuning so it doesn't lag your server to hell
-    static constexpr int UPDATE_INTERVAL_MS = 33;    // 30 FPS i guess
-    static constexpr int BATCH_PROCESS_LIMIT = 100;  // max animations per update cycle
-    static constexpr int CALLBACK_RESERVE = 128;     // pre-allocate callback buffer
+    static constexpr int UPDATE_INTERVAL_MS = 33;        // 30 FPS i guess
+    static constexpr int BATCH_PROCESS_LIMIT = 100;      // max animations per update cycle
+    static constexpr int CALLBACK_RESERVE = 128;         // pre-allocate callback buffer
 }
 
 class EasingComponent;
@@ -165,7 +164,8 @@ private:
         }
     };
     
-    std::array<Animation, Config::MAX_ANIMATIONS> animations;
+    std::vector<Animation> animations;           // grows on demand
+    std::vector<int> freeList;                    // recycled slot indices (O(1) alloc)
     std::unordered_map<int, BatchUpdate> playerBatches;
     
     ICore* core = nullptr;
@@ -194,8 +194,10 @@ private:
 public:
     AnimationSystem(ICore* c) : core(c)
     {
+        animations.reserve(Config::INITIAL_ANIM_CAPACITY);
+        freeList.reserve(Config::INITIAL_ANIM_CAPACITY);
         pendingCallbacks.reserve(Config::CALLBACK_RESERVE);
-        activeAnimationIndices.reserve(Config::MAX_ANIMATIONS / 2);
+        activeAnimationIndices.reserve(Config::INITIAL_ANIM_CAPACITY);
         playerBatches.reserve(Config::EXPECTED_PLAYERS);
     }
     
@@ -217,60 +219,66 @@ public:
         if (durationMs < 0) durationMs = 0;
         if (!easingFunc) easingFunc = Easing::Linear;
         
-        // find a free slot, linear search but whatever
-        for (int i = 0; i < Config::MAX_ANIMATIONS; i++)
+        // grab a recycled slot OR grow the vector
+        int slot;
+        if (!freeList.empty())
         {
-            if (!animations[i].active)
-            {
-                auto& a = animations[i];
-                a.active = true;
-                a.silent = silent;
-                a.playerId = playerId;
-                a.textDrawId = textDrawId;
-                a.animationType = animType;
-                a.startPos = startPos;
-                a.targetPos = targetPos;
-                a.startLetterSize = startLetterSize;
-                a.targetLetterSize = targetLetterSize;
-                a.startTextSize = startTextSize;
-                a.targetTextSize = targetTextSize;
-                a.startColor = startColor;
-                a.targetColor = targetColor;
-                a.startBoxColor = startBoxColor;
-                a.targetBoxColor = targetBoxColor;
-                a.startBgColor = startBgColor;
-                a.targetBgColor = targetBgColor;
-                a.startTime = std::chrono::steady_clock::now();
-                a.durationMs = durationMs;
-                a.easingFunc = easingFunc;
-                
-                a.flags = 0;
-                if (animPos) a.flags |= Animation::FLAG_POS;
-                if (animLetterSize) a.flags |= Animation::FLAG_LETTER;
-                if (animTextSize) a.flags |= Animation::FLAG_TEXT;
-                if (animColor) a.flags |= Animation::FLAG_COLOR;
-                if (animBoxColor) a.flags |= Animation::FLAG_BOX;
-                if (animBgColor) a.flags |= Animation::FLAG_BG;
-                
-                activeAnimationIndices.push_back(i);
-                
-                stats.totalAnimations++;
-                if (silent) stats.silentAnimations++;  // track silent animations
-                if (activeAnimationIndices.size() > stats.peakConcurrent) {
-                    stats.peakConcurrent = activeAnimationIndices.size();
-                }
-                
-                return i;
-            }
+            slot = freeList.back();
+            freeList.pop_back();
         }
-        return -1; // No slots available, server is fucked
+        else
+        {
+            slot = static_cast<int>(animations.size());
+            animations.emplace_back();  // grow by 1 on demand
+        }
+        
+        auto& a = animations[slot];
+        a.active = true;
+        a.silent = silent;
+        a.playerId = playerId;
+        a.textDrawId = textDrawId;
+        a.animationType = animType;
+        a.startPos = startPos;
+        a.targetPos = targetPos;
+        a.startLetterSize = startLetterSize;
+        a.targetLetterSize = targetLetterSize;
+        a.startTextSize = startTextSize;
+        a.targetTextSize = targetTextSize;
+        a.startColor = startColor;
+        a.targetColor = targetColor;
+        a.startBoxColor = startBoxColor;
+        a.targetBoxColor = targetBoxColor;
+        a.startBgColor = startBgColor;
+        a.targetBgColor = targetBgColor;
+        a.startTime = std::chrono::steady_clock::now();
+        a.durationMs = durationMs;
+        a.easingFunc = easingFunc;
+        
+        a.flags = 0;
+        if (animPos) a.flags |= Animation::FLAG_POS;
+        if (animLetterSize) a.flags |= Animation::FLAG_LETTER;
+        if (animTextSize) a.flags |= Animation::FLAG_TEXT;
+        if (animColor) a.flags |= Animation::FLAG_COLOR;
+        if (animBoxColor) a.flags |= Animation::FLAG_BOX;
+        if (animBgColor) a.flags |= Animation::FLAG_BG;
+        
+        activeAnimationIndices.push_back(slot);
+        
+        stats.totalAnimations++;
+        if (silent) stats.silentAnimations++;
+        if (activeAnimationIndices.size() > stats.peakConcurrent) {
+            stats.peakConcurrent = activeAnimationIndices.size();
+        }
+        
+        return slot;
     }
     
     bool StopAnimation(int animId)
     {
-        if (animId >= 0 && animId < Config::MAX_ANIMATIONS && animations[animId].active)
+        if (animId >= 0 && animId < static_cast<int>(animations.size()) && animations[animId].active)
         {
             animations[animId].active = false;
+            freeList.push_back(animId);  // recycle slot
             
             auto it = std::find(activeAnimationIndices.begin(), activeAnimationIndices.end(), animId);
             if (it != activeAnimationIndices.end())
@@ -368,6 +376,7 @@ public:
                 }
                 
                 anim.active = false;
+                freeList.push_back(i);  // recycle slot back to pool
                 std::swap(*it, activeAnimationIndices.back());
                 activeAnimationIndices.pop_back();
             }
@@ -405,6 +414,7 @@ public:
                     });
                 }
                 animations[i].active = false;
+                freeList.push_back(i);  // recycle slot
                 std::swap(*it, activeAnimationIndices.back());
                 activeAnimationIndices.pop_back();
             }
@@ -415,6 +425,18 @@ public:
         }
     }
     
+    // Stop all running animations and reset the pool
+    void ResetAll()
+    {
+        for (int idx : activeAnimationIndices)
+        {
+            animations[idx].active = false;
+            freeList.push_back(idx);
+        }
+        activeAnimationIndices.clear();
+        pendingCallbacks.clear();
+    }
+    
     int GetActiveAnimationCount() const
     {
         return static_cast<int>(activeAnimationIndices.size());
@@ -422,7 +444,7 @@ public:
     
     bool IsAnimationActive(int animId) const
     {
-        return animId >= 0 && animId < Config::MAX_ANIMATIONS && animations[animId].active;
+        return animId >= 0 && animId < static_cast<int>(animations.size()) && animations[animId].active;
     }
     
     const Stats& GetStats() const { return stats; }
@@ -567,7 +589,7 @@ public:
         core = c;
         core->printLn(" ");
         core->printLn("  open.mp easing-functions component loaded!");
-        core->printLn("  Max Animations: %d", Config::MAX_ANIMATIONS);
+        core->printLn("  Animation Pool: dynamic (starts at %d, grows on demand)", Config::INITIAL_ANIM_CAPACITY);
         core->printLn("  Update Rate: %d FPS", 1000 / Config::UPDATE_INTERVAL_MS);
         core->printLn("  Batch Limit: %d per frame", Config::BATCH_PROCESS_LIMIT);
         core->printLn(" ");
@@ -682,11 +704,7 @@ public:
     {
         if (animSystem)
         {
-            // Stop all animations
-            for (int i = 0; i < Config::MAX_ANIMATIONS; i++)
-            {
-                animSystem->StopAnimation(i);
-            }
+            animSystem->ResetAll();
         }
     }
     
