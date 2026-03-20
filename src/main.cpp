@@ -21,8 +21,8 @@ namespace Config {
     static constexpr int INITIAL_ANIM_CAPACITY = 64;    // starting vector capacity, grows on demand
     
     // performance tuning so it doesn't lag your server to hell
-    static constexpr int UPDATE_INTERVAL_MS = 33;        // 30 FPS i guess
-    static constexpr int BATCH_PROCESS_LIMIT = 100;      // max animations per update cycle
+    inline int updateIntervalMs = 33;        // 30 FPS i guess
+    inline int batchProcessLimit = 100;      // max animations per update cycle
     static constexpr int CALLBACK_RESERVE = 128;         // pre-allocate callback buffer
 }
 
@@ -305,7 +305,7 @@ public:
         playerBatches.clear();
         
         const size_t totalAnims = activeAnimationIndices.size();
-        const size_t chunksPerFrame = (totalAnims + Config::BATCH_PROCESS_LIMIT - 1) / Config::BATCH_PROCESS_LIMIT;
+        const size_t chunksPerFrame = (totalAnims + Config::batchProcessLimit - 1) / Config::batchProcessLimit;
         
         // iterate through active animations
         for (auto it = activeAnimationIndices.begin(); it != activeAnimationIndices.end();)
@@ -587,11 +587,19 @@ public:
     void onLoad(ICore* c) override
     {
         core = c;
+        
+        // Extract config from config.json, otherwise use defaults
+        auto& config = core->getConfig();
+        if (int* interval = config.getInt("easing.update_interval_ms"))
+            Config::updateIntervalMs = *interval;
+        if (int* batchLimit = config.getInt("easing.batch_process_limit"))
+            Config::batchProcessLimit = *batchLimit;
+            
         core->printLn(" ");
         core->printLn("  open.mp easing-functions component loaded!");
         core->printLn("  Animation Pool: dynamic (starts at %d, grows on demand)", Config::INITIAL_ANIM_CAPACITY);
-        core->printLn("  Update Rate: %d FPS", 1000 / Config::UPDATE_INTERVAL_MS);
-        core->printLn("  Batch Limit: %d per frame", Config::BATCH_PROCESS_LIMIT);
+        core->printLn("  Update Rate: %d FPS (%d ms)", 1000 / Config::updateIntervalMs, Config::updateIntervalMs);
+        core->printLn("  Batch Limit: %d per frame", Config::batchProcessLimit);
         core->printLn(" ");
         
         setAmxLookups(core);
@@ -621,7 +629,7 @@ public:
         {
             updateTimer = timers->create(
                 new AnimationTimerHandler(this),
-                std::chrono::milliseconds(Config::UPDATE_INTERVAL_MS),
+                std::chrono::milliseconds(Config::updateIntervalMs),
                 true
             );
         }
