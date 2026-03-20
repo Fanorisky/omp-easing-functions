@@ -23,7 +23,7 @@ namespace Config {
     // performance tuning so it doesn't lag your server to hell
     inline int updateRateFps = 30;           // 30 FPS default
     inline int batchProcessLimit = 100;      // max animations per update cycle
-    static constexpr int CALLBACK_RESERVE = 128;         // pre-allocate callback buffer
+    inline int callbackReserve = 128;        // pre-allocate callback buffer
 }
 
 class EasingComponent;
@@ -196,7 +196,7 @@ public:
     {
         animations.reserve(Config::initialAnimCapacity);
         freeList.reserve(Config::initialAnimCapacity);
-        pendingCallbacks.reserve(Config::CALLBACK_RESERVE);
+        pendingCallbacks.reserve(Config::callbackReserve);
         activeAnimationIndices.reserve(Config::initialAnimCapacity);
         playerBatches.reserve(Config::expectedPlayers);
     }
@@ -598,6 +598,8 @@ public:
             Config::expectedPlayers = *players;
         if (int* initialCap = config.getInt("easing.initial_capacity"))
             Config::initialAnimCapacity = *initialCap;
+        if (int* cbReserve = config.getInt("easing.callback_reserve"))
+            Config::callbackReserve = *cbReserve;
             
         // Calculate MS from FPS for internal timer
         int intervalMs = 1000 / (Config::updateRateFps > 0 ? Config::updateRateFps : 30);
