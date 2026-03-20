@@ -17,11 +17,11 @@
 #include <algorithm>
 
 namespace Config {
-    static constexpr int EXPECTED_PLAYERS = 512;         // player count hint for pre-alloc
-    static constexpr int INITIAL_ANIM_CAPACITY = 64;    // starting vector capacity, grows on demand
+    inline int expectedPlayers = 512;         // player count hint for pre-alloc
+    inline int initialAnimCapacity = 64;      // starting vector capacity, grows on demand
     
     // performance tuning so it doesn't lag your server to hell
-    inline int updateIntervalMs = 33;        // 30 FPS i guess
+    inline int updateRateFps = 30;           // 30 FPS default
     inline int batchProcessLimit = 100;      // max animations per update cycle
     static constexpr int CALLBACK_RESERVE = 128;         // pre-allocate callback buffer
 }
@@ -194,11 +194,11 @@ private:
 public:
     AnimationSystem(ICore* c) : core(c)
     {
-        animations.reserve(Config::INITIAL_ANIM_CAPACITY);
-        freeList.reserve(Config::INITIAL_ANIM_CAPACITY);
+        animations.reserve(Config::initialAnimCapacity);
+        freeList.reserve(Config::initialAnimCapacity);
         pendingCallbacks.reserve(Config::CALLBACK_RESERVE);
-        activeAnimationIndices.reserve(Config::INITIAL_ANIM_CAPACITY);
-        playerBatches.reserve(Config::EXPECTED_PLAYERS);
+        activeAnimationIndices.reserve(Config::initialAnimCapacity);
+        playerBatches.reserve(Config::expectedPlayers);
     }
     
     void SetTextDrawsComponent(ITextDrawsComponent* td) { textDraws = td; }
@@ -590,15 +590,22 @@ public:
         
         // Extract config from config.json, otherwise use defaults
         auto& config = core->getConfig();
-        if (int* interval = config.getInt("easing.update_interval_ms"))
-            Config::updateIntervalMs = *interval;
+        if (int* fps = config.getInt("easing.update_rate_fps"))
+            Config::updateRateFps = *fps;
         if (int* batchLimit = config.getInt("easing.batch_process_limit"))
             Config::batchProcessLimit = *batchLimit;
+        if (int* players = config.getInt("easing.expected_players"))
+            Config::expectedPlayers = *players;
+        if (int* initialCap = config.getInt("easing.initial_capacity"))
+            Config::initialAnimCapacity = *initialCap;
+            
+        // Calculate MS from FPS for internal timer
+        int intervalMs = 1000 / (Config::updateRateFps > 0 ? Config::updateRateFps : 30);
             
         core->printLn(" ");
         core->printLn("  open.mp easing-functions component loaded!");
-        core->printLn("  Animation Pool: dynamic (starts at %d, grows on demand)", Config::INITIAL_ANIM_CAPACITY);
-        core->printLn("  Update Rate: %d FPS (%d ms)", 1000 / Config::updateIntervalMs, Config::updateIntervalMs);
+        core->printLn("  Animation Pool: dynamic (starts at %d, grows on demand)", Config::initialAnimCapacity);
+        core->printLn("  Update Rate: %d FPS (%d ms)", Config::updateRateFps, intervalMs);
         core->printLn("  Batch Limit: %d per frame", Config::batchProcessLimit);
         core->printLn(" ");
         
@@ -627,9 +634,10 @@ public:
         
         if (timers)
         {
+            int intervalMs = 1000 / (Config::updateRateFps > 0 ? Config::updateRateFps : 30);
             updateTimer = timers->create(
                 new AnimationTimerHandler(this),
-                std::chrono::milliseconds(Config::updateIntervalMs),
+                std::chrono::milliseconds(intervalMs),
                 true
             );
         }
