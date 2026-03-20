@@ -4,6 +4,8 @@ An open.mp server component that adds textdraw easing and animation functionalit
 It is essentially a component-based version of the original
 [pawn-easing-functions](https://github.com/alexchwoj/pawn-easing-functions.git) by [alexchwoj](https://github.com/alexchwoj), with improvements and optimized performance for large-scale animations.
 
+Unlike the original pawn version which is hardcoded to 1024 slots, this component uses a **dynamic memory pool** that grows automatically as needed, resulting in a much smaller memory footprint and no hard limits on active animations.
+
 ---
 
 ## Installation
@@ -15,9 +17,31 @@ It is essentially a component-based version of the original
 
    ```pawn
    #include <omp_easing>
-   ```
-
    to any script where you want to use easing native functions, then recompile your scripts.
+
+---
+
+## Configuration
+
+You can fully customize the behavior and performance of the component by adding an `easing` block to your server's `config.json`:
+
+```json
+{
+    "easing": {
+        "update_rate_fps": 30,
+        "batch_process_limit": 100,
+        "expected_players": 512,
+        "initial_capacity": 64,
+        "callback_reserve": 128
+    }
+}
+```
+
+- **`update_rate_fps`** (default: `30`): The framerate of the animations. Higher values make animations smoother but consume more server CPU.
+- **`batch_process_limit`** (default: `100`): Maximum number of textdraw updates sent per server tick to prevent network lag spikes during massive visual changes.
+- **`expected_players`** (default: `512`): Internal hint for the memory pre-allocator. Set this closer to your actual server player count.
+- **`initial_capacity`** (default: `64`): Starting size of the dynamic animation pool. It will grow automatically if exceeded, but setting it accurately prevents initial re-allocations.
+- **`callback_reserve`** (default: `128`): Pre-allocated buffer for pawn callbacks (`OnAnimatorFinish`).
 
 ---
 
