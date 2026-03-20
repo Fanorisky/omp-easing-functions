@@ -17,7 +17,7 @@ add_definitions(
 	-DPAWN_CELL_SIZE=32
 )
 
-add_library(${PROJECT_NAME} SHARED main.cpp)
+add_library(${PROJECT_NAME} SHARED src/main.cpp)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE OMP-SDK)
 
