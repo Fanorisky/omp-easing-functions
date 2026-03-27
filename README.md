@@ -17,7 +17,7 @@ Unlike the original pawn version which is hardcoded to 1024 slots, this componen
 
    ```pawn
    #include <omp_easing>
-   to any script where you want to use easing native functions, then recompile your scripts.
+   to your gamemodes file, then recompile your scripts.
 
 ---
 
@@ -147,4 +147,5 @@ You can preview each easing type visually here: [https://easings.net/](https://e
 ## Credits
 - [alexchwoj](https://github.com/alexchwoj) and all pawn-easing-functions contributors
 - [AmyrAhmady](https://github.com/AmyrAhmady) for the open.mp component SDK
+- [Yksir onav](https://github.com/vCrafDev) code refactor
 - [Fanorisky](https://github.com/Fanorisky) (me)
