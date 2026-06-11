@@ -38,7 +38,9 @@ You can fully customize the behavior and performance of the component by adding 
 ```
 
 - **`update_rate_fps`** (default: `30`): The framerate of the animations. Higher values make animations smoother but consume more server CPU.
-- **`batch_process_limit`** (default: `100`): Maximum number of textdraw updates sent per server tick to prevent network lag spikes during massive visual changes.
+- **`batch_process_limit`** (default: `100`): Maximum number of animations processed per update tick, to prevent CPU/network lag spikes during massive visual changes. Animations beyond the limit are **never dropped**: they are processed round-robin on the following ticks, so every animation still progresses and finishes correctly. Set to `0` to disable the limit (process all animations every tick).
+
+  > **Trade-off**: when the number of concurrently active animations exceeds this limit, the *effective* framerate of each animation drops proportionally. Example: 300 active animations with a limit of `100` at 30 FPS means each animation only updates every 3rd tick (~10 FPS visually). Raise this value (e.g. `500`-`1000`) if your server runs large-scale animations and you want them to stay smooth; keep it low if you prioritize a stable server tick rate over animation smoothness.
 - **`expected_players`** (default: `512`): Internal hint for the memory pre-allocator. Set this closer to your actual server player count.
 - **`initial_capacity`** (default: `64`): Starting size of the dynamic animation pool. It will grow automatically if exceeded, but setting it accurately prevents initial re-allocations.
 - **`callback_reserve`** (default: `128`): Pre-allocated buffer for pawn callbacks (`OnAnimatorFinish`).
@@ -60,7 +62,8 @@ native PlayerText_MoveToY(playerid, PlayerText:textdraw, Float:y, duration, ease
 
 // Size
 native PlayerText_MoveLetterSize(playerid, PlayerText:textdraw, Float:y, duration, easeType, bool:silent = false);
-native PlayerText_MoveTextSize(playerid, PlayerText:textdraw, Float:x, duration, easeType, bool:silent = false);
+native PlayerText_MoveTextSizeX(playerid, PlayerText:textdraw, Float:x, duration, easeType, bool:silent = false);
+native PlayerText_MoveTextSizeY(playerid, PlayerText:textdraw, Float:y, duration, easeType, bool:silent = false);
 native PlayerText_MoveSize(playerid, PlayerText:textdraw, Float:x, Float:y, duration, easeType, bool:silent = false);
 
 // Color
@@ -75,7 +78,7 @@ native IsAnimationActive(animator_id);
 
 // Debug and monitoring
 native GetActiveAnimationsCount();
-native GetAnimationStats(&totalCreated, &peakConcurrent, &totalCallbacks);
+native GetAnimationStats(&totalCreated, &peakConcurrent, &totalCallbacks, &silentAnimations = 0);
 ```
 
 ---
@@ -83,7 +86,7 @@ native GetAnimationStats(&totalCreated, &peakConcurrent, &totalCallbacks);
 ## Callback
 
 ```pawn
-OnAnimatorFinish(playerid, animatorid, textdrawid, types);
+OnAnimatorFinish(playerid, animatorid, textdrawid, type);
 ```
 
 ---

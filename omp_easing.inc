@@ -70,7 +70,7 @@ native PlayerText_PlaceOnTop(playerid, PlayerText:textdraw);
 native PlayerText_StopAnimation(animator_id);
 native IsAnimationActive(animator_id);
 native GetActiveAnimationsCount();
-native GetAnimationStats(&totalCreated, &peakConcurrent, &totalCallbacks);
+native GetAnimationStats(&totalCreated, &peakConcurrent, &totalCallbacks, &silentAnimations = 0);
 
 // Alias for British English spelling
 #define PlayerText_InterpolateColour PlayerText_InterpolateColor

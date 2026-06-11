@@ -11,6 +11,7 @@
 #include <memory>
 #include <chrono>
 #include <unordered_map>
+#include <unordered_set>
 #include <array>
 #include <vector>
 #include <functional>
@@ -119,6 +120,8 @@ private:
     {
         bool active = false;
         bool silent = false;  // no callback when done, for chaining or smth
+        uint16_t generation = 0;  // bumped on slot reuse so stale ids become invalid (no ABA)
+        int activeIndex = -1;     // position inside activeAnimationIndices, -1 when inactive
         int playerId = -1;
         int textDrawId = -1;
         int animationType = -1;
@@ -150,23 +153,20 @@ private:
         inline bool shouldAnimateBgColor() const { return flags & FLAG_BG; }
     };
     
-    // use vector instead of unordered_set for small batches
-    // cuz fuck hash tables for small N
+    // hash set keeps dedupe O(1) even with lots of dirty textdraws per player
     struct BatchUpdate
     {
-        std::vector<int> dirtyTextDraws; // faster for small elements
+        std::unordered_set<int> dirtyTextDraws;
         
         void addTextDraw(int tdId) {
-            // avoid duplicates
-            if (std::find(dirtyTextDraws.begin(), dirtyTextDraws.end(), tdId) == dirtyTextDraws.end()) {
-                dirtyTextDraws.push_back(tdId);
-            }
+            dirtyTextDraws.insert(tdId);  // set handles duplicates for us
         }
     };
     
     std::vector<Animation> animations;           // grows on demand
     std::vector<int> freeList;                    // recycled slot indices (O(1) alloc)
     std::unordered_map<int, BatchUpdate> playerBatches;
+    size_t updateCursor = 0;                      // round-robin position for batch-limited updates
     
     ICore* core = nullptr;
     ITextDrawsComponent* textDraws = nullptr;
@@ -203,6 +203,18 @@ public:
     
     void SetTextDrawsComponent(ITextDrawsComponent* td) { textDraws = td; }
     
+    // anim ids encode { generation | slot } so recycled slots don't alias old ids
+    static constexpr int SLOT_BITS = 16;
+    static constexpr int SLOT_MASK = 0xFFFF;
+    static constexpr int GEN_MASK = 0x7FFF;  // 15 bits, keeps ids non-negative
+    
+    static inline int MakeAnimId(int slot, uint16_t gen)
+    {
+        return ((static_cast<int>(gen) & GEN_MASK) << SLOT_BITS) | (slot & SLOT_MASK);
+    }
+    static inline int SlotFromId(int animId) { return animId & SLOT_MASK; }
+    static inline uint16_t GenFromId(int animId) { return static_cast<uint16_t>((animId >> SLOT_BITS) & GEN_MASK); }
+    
     // create a new animation, returns anim id or -1 if fucked
     int CreateAnimation(int playerId, int textDrawId,
         const Vector2& startPos, const Vector2& targetPos,
@@ -225,9 +237,12 @@ public:
         {
             slot = freeList.back();
             freeList.pop_back();
+            // bump generation so stale ids pointing at this slot become invalid
+            animations[slot].generation = static_cast<uint16_t>((animations[slot].generation + 1) & GEN_MASK);
         }
         else
         {
+            if (animations.size() > static_cast<size_t>(SLOT_MASK)) return -1;  // slot space exhausted
             slot = static_cast<int>(animations.size());
             animations.emplace_back();  // grow by 1 on demand
         }
@@ -262,6 +277,7 @@ public:
         if (animBoxColor) a.flags |= Animation::FLAG_BOX;
         if (animBgColor) a.flags |= Animation::FLAG_BG;
         
+        a.activeIndex = static_cast<int>(activeAnimationIndices.size());
         activeAnimationIndices.push_back(slot);
         
         stats.totalAnimations++;
@@ -270,93 +286,82 @@ public:
             stats.peakConcurrent = activeAnimationIndices.size();
         }
         
-        return slot;
+        return MakeAnimId(slot, a.generation);
     }
     
     bool StopAnimation(int animId)
     {
-        if (animId >= 0 && animId < static_cast<int>(animations.size()) && animations[animId].active)
-        {
-            animations[animId].active = false;
-            freeList.push_back(animId);  // recycle slot
-            
-            auto it = std::find(activeAnimationIndices.begin(), activeAnimationIndices.end(), animId);
-            if (it != activeAnimationIndices.end())
-            {
-                // swap and pop
-                std::swap(*it, activeAnimationIndices.back());
-                activeAnimationIndices.pop_back();
-            }
-            
-            return true;
-        }
-        return false;
+        if (animId < 0) return false;
+        
+        const int slot = SlotFromId(animId);
+        if (slot >= static_cast<int>(animations.size())) return false;
+        
+        auto& a = animations[slot];
+        if (!a.active || a.generation != GenFromId(animId)) return false;  // stale/reused id
+        
+        a.active = false;
+        RemoveFromActive(slot);     // O(1) instead of a linear search
+        freeList.push_back(slot);   // recycle slot
+        return true;
     }
     
-    // chunked update
+    // batch-limited update
     // cuz don't want to freeze the server with maxed animations
     void Update()
     {
         if (activeAnimationIndices.empty()) return;
         
         auto updateStart = std::chrono::steady_clock::now();
-        const auto now = std::chrono::steady_clock::now();
+        const auto now = updateStart;
         
         playerBatches.clear();
         
+        // honor batch_process_limit: process at most N animations per tick,
+        // round-robin via updateCursor so every animation still progresses
         const size_t totalAnims = activeAnimationIndices.size();
-        const size_t chunksPerFrame = (totalAnims + Config::batchProcessLimit - 1) / Config::batchProcessLimit;
+        const size_t limit = (Config::batchProcessLimit > 0)
+            ? std::min(static_cast<size_t>(Config::batchProcessLimit), totalAnims)
+            : totalAnims;
         
-        // iterate through active animations
-        for (auto it = activeAnimationIndices.begin(); it != activeAnimationIndices.end();)
+        if (updateCursor >= activeAnimationIndices.size())
         {
-            const int i = *it;
-            auto& anim = animations[i];
-            
-            if (!anim.active)
+            updateCursor = 0;
+        }
+        
+        size_t pos = updateCursor;
+        size_t processed = 0;
+        
+        while (processed < limit && !activeAnimationIndices.empty())
+        {
+            if (pos >= activeAnimationIndices.size())
             {
-                // swap and pop
-                std::swap(*it, activeAnimationIndices.back());
-                activeAnimationIndices.pop_back();
-                continue;
+                pos = 0;  // wrap around
             }
+            
+            const int slot = activeAnimationIndices[pos];
+            auto& anim = animations[slot];
+            ++processed;
             
             const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - anim.startTime).count();
             
-            float t = (anim.durationMs > 0) ? 
+            const float t = (anim.durationMs > 0) ? 
                 std::min(static_cast<float>(elapsed) / anim.durationMs, 1.0f) : 1.0f;
             
-            const float easedT = anim.easingFunc(t);
-            
             IPlayer* player = core->getPlayers().get(anim.playerId);
-            if (!player)
-            {
-                anim.active = false;
-                std::swap(*it, activeAnimationIndices.back());
-                activeAnimationIndices.pop_back();
-                continue;
-            }
+            IPlayerTextDrawData* tdData = player ? queryExtension<IPlayerTextDrawData>(player) : nullptr;
+            IPlayerTextDraw* td = tdData ? tdData->get(anim.textDrawId) : nullptr;
             
-            auto tdData = queryExtension<IPlayerTextDrawData>(player);
-            if (!tdData)
-            {
-                anim.active = false;
-                std::swap(*it, activeAnimationIndices.back());
-                activeAnimationIndices.pop_back();
-                continue;
-            }
-            
-            IPlayerTextDraw* td = tdData->get(anim.textDrawId);
             if (!td)
             {
+                // player gone or textdraw destroyed, drop the animation
                 anim.active = false;
-                std::swap(*it, activeAnimationIndices.back());
-                activeAnimationIndices.pop_back();
-                continue;
+                RemoveFromActive(slot);
+                freeList.push_back(slot);
+                continue;  // don't advance pos: a swapped-in element now lives here
             }
             
-            UpdateTextDrawProperties(td, anim, easedT);
+            UpdateTextDrawProperties(td, anim, anim.easingFunc(t));
             
             // Add to batch
             playerBatches[anim.playerId].addTextDraw(anim.textDrawId);
@@ -367,7 +372,7 @@ public:
                 {
                     pendingCallbacks.push_back({
                         anim.playerId,
-                        i,
+                        MakeAnimId(slot, anim.generation),
                         anim.textDrawId,
                         anim.animationType
                     });
@@ -376,20 +381,24 @@ public:
                 }
                 
                 anim.active = false;
-                freeList.push_back(i);  // recycle slot back to pool
-                std::swap(*it, activeAnimationIndices.back());
-                activeAnimationIndices.pop_back();
+                RemoveFromActive(slot);
+                freeList.push_back(slot);  // recycle slot back to pool
+                // don't advance pos here either
             }
             else
             {
-                ++it;
+                ++pos;
             }
         }
+        
+        updateCursor = pos;
         
         FlushBatchUpdates();
         
         auto updateEnd = std::chrono::steady_clock::now();
-        stats.avgUpdateTime = std::chrono::duration_cast<std::chrono::milliseconds>(updateEnd - updateStart);
+        const auto elapsedUpdate = std::chrono::duration_cast<std::chrono::milliseconds>(updateEnd - updateStart);
+        // exponential moving average instead of overwriting every tick
+        stats.avgUpdateTime = (stats.avgUpdateTime * 7 + elapsedUpdate) / 8;
     }
     
     std::vector<CallbackInfo> GetPendingCallbacks()
@@ -399,42 +408,50 @@ public:
     
     void CleanupPlayerAnimations(int playerId, bool triggerCallbacks = false)
     {
-        for (auto it = activeAnimationIndices.begin(); it != activeAnimationIndices.end();)
+        for (size_t pos = 0; pos < activeAnimationIndices.size();)
         {
-            const int i = *it;
-            if (animations[i].active && animations[i].playerId == playerId)
+            const int slot = activeAnimationIndices[pos];
+            auto& anim = animations[slot];
+            
+            if (anim.active && anim.playerId == playerId)
             {
-                if (triggerCallbacks && !animations[i].silent)
+                if (triggerCallbacks && !anim.silent)
                 {
                     pendingCallbacks.push_back({
                         playerId,
-                        i,
-                        animations[i].textDrawId,
-                        animations[i].animationType
+                        MakeAnimId(slot, anim.generation),
+                        anim.textDrawId,
+                        anim.animationType
                     });
                 }
-                animations[i].active = false;
-                freeList.push_back(i);  // recycle slot
-                std::swap(*it, activeAnimationIndices.back());
-                activeAnimationIndices.pop_back();
+                anim.active = false;
+                RemoveFromActive(slot);
+                freeList.push_back(slot);  // recycle slot
             }
             else
             {
-                ++it;
+                ++pos;
             }
+        }
+        
+        if (updateCursor >= activeAnimationIndices.size())
+        {
+            updateCursor = 0;
         }
     }
     
     // Stop all running animations and reset the pool
     void ResetAll()
     {
-        for (int idx : activeAnimationIndices)
+        for (int slot : activeAnimationIndices)
         {
-            animations[idx].active = false;
-            freeList.push_back(idx);
+            animations[slot].active = false;
+            animations[slot].activeIndex = -1;
+            freeList.push_back(slot);
         }
         activeAnimationIndices.clear();
         pendingCallbacks.clear();
+        updateCursor = 0;
     }
     
     int GetActiveAnimationCount() const
@@ -444,12 +461,29 @@ public:
     
     bool IsAnimationActive(int animId) const
     {
-        return animId >= 0 && animId < static_cast<int>(animations.size()) && animations[animId].active;
+        if (animId < 0) return false;
+        const int slot = SlotFromId(animId);
+        return slot < static_cast<int>(animations.size())
+            && animations[slot].active
+            && animations[slot].generation == GenFromId(animId);  // reject stale ids
     }
     
     const Stats& GetStats() const { return stats; }
     
 private:
+    // O(1) removal from the active list using the stored position
+    void RemoveFromActive(int slot)
+    {
+        const int pos = animations[slot].activeIndex;
+        if (pos < 0) return;
+        
+        const int last = activeAnimationIndices.back();
+        activeAnimationIndices[pos] = last;
+        animations[last].activeIndex = pos;
+        activeAnimationIndices.pop_back();
+        animations[slot].activeIndex = -1;
+    }
+    
     void UpdateTextDrawProperties(IPlayerTextDraw* td, const Animation& anim, float t)
     {
         if (anim.shouldAnimatePosition())
