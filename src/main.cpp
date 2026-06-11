@@ -906,7 +906,34 @@ SCRIPT_API(PlayerText_MoveToY, int(IPlayer& player, IPlayerTextDraw& td, float y
 }
 
 // Size animations
-SCRIPT_API(PlayerText_MoveLetterSize, int(IPlayer& player, IPlayerTextDraw& td, float sizeY, int duration, int easeType, bool silent))
+SCRIPT_API(PlayerText_MoveLetterSizeX, int(IPlayer& player, IPlayerTextDraw& td, float sizeX, int duration, int easeType, bool silent))
+{
+    auto component = GetEasingComponent();
+    if (!component || !component->GetAnimationSystem()) return -1;
+    
+    if (duration < 0) duration = 0;
+    
+    Vector2 startSize = td.getLetterSize();
+    Vector2 targetSize = {sizeX, startSize.y};
+    Easing::EasingFunc easeFunc = GetEasingFunction(easeType);
+    Colour transparent(0, 0, 0, 0);
+    
+    return component->GetAnimationSystem()->CreateAnimation(
+        player.getID(), td.getID(),
+        Vector2(0, 0), Vector2(0, 0),
+        startSize, targetSize,
+        Vector2(0, 0), Vector2(0, 0),
+        transparent, transparent,
+        transparent, transparent,
+        transparent, transparent,
+        duration, easeFunc,
+        false, true, false,
+        false, false, false,
+        ANIMATOR_LETTER_SIZE, silent
+    );
+}
+
+SCRIPT_API(PlayerText_MoveLetterSizeY, int(IPlayer& player, IPlayerTextDraw& td, float sizeY, int duration, int easeType, bool silent))
 {
     auto component = GetEasingComponent();
     if (!component || !component->GetAnimationSystem()) return -1;

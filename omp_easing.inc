@@ -56,16 +56,17 @@ native Float:Lerp(Float:start, Float:end, Float:t);
 native LerpColor(color1, color2, Float:t);
 
 // PlayerTextDraw animation functions
-native PlayerText_MoveTo(playerid, PlayerText:textdraw, Float:x, Float:y, duration, easeType, bool:silent = false);
-native PlayerText_MoveToX(playerid, PlayerText:textdraw, Float:x, duration, easeType, bool:silent = false);
-native PlayerText_MoveToY(playerid, PlayerText:textdraw, Float:y, duration, easeType, bool:silent = false);
-native PlayerText_MoveLetterSize(playerid, PlayerText:textdraw, Float:y, duration, easeType, bool:silent = false);
-native PlayerText_MoveTextSizeX(playerid, PlayerText:textdraw, Float:x, duration, easeType, bool:silent = false);
-native PlayerText_MoveTextSizeY(playerid, PlayerText:textdraw, Float:y, duration, easeType, bool:silent = false);
-native PlayerText_MoveSize(playerid, PlayerText:textdraw, Float:x, Float:y, duration, easeType, bool:silent = false);
-native PlayerText_InterpolateColor(playerid, PlayerText:textdraw, color, duration, easeType, bool:silent = false);
-native PlayerText_InterpolateBoxColor(playerid, PlayerText:textdraw, color, duration, easeType, bool:silent = false);
-native PlayerText_InterpolateBGColor(playerid, PlayerText:textdraw, color, duration, easeType, bool:silent = false);
+native PlayerText_MoveTo(playerid, PlayerText:textdraw, Float:x, Float:y, duration = 1000, easeType = EASE_NONE, bool:silent = false);
+native PlayerText_MoveToX(playerid, PlayerText:textdraw, Float:x, duration = 1000, easeType = EASE_NONE, bool:silent = false);
+native PlayerText_MoveToY(playerid, PlayerText:textdraw, Float:y, duration = 1000, easeType = EASE_NONE, bool:silent = false);
+native PlayerText_MoveLetterSizeX(playerid, PlayerText:textdraw, Float:x, duration = 1000, easeType = EASE_NONE, bool:silent = false);
+native PlayerText_MoveLetterSizeY(playerid, PlayerText:textdraw, Float:y, duration = 1000, easeType = EASE_NONE, bool:silent = false);
+native PlayerText_MoveTextSizeX(playerid, PlayerText:textdraw, Float:x, duration = 1000, easeType = EASE_NONE, bool:silent = false);
+native PlayerText_MoveTextSizeY(playerid, PlayerText:textdraw, Float:y, duration = 1000, easeType = EASE_NONE, bool:silent = false);
+native PlayerText_MoveSize(playerid, PlayerText:textdraw, Float:x, Float:y, duration = 1000, easeType = EASE_NONE, bool:silent = false);
+native PlayerText_InterpolateColor(playerid, PlayerText:textdraw, color, duration = 1000, easeType = EASE_NONE, bool:silent = false);
+native PlayerText_InterpolateBoxColor(playerid, PlayerText:textdraw, color, duration = 1000, easeType = EASE_NONE, bool:silent = false);
+native PlayerText_InterpolateBGColor(playerid, PlayerText:textdraw, color, duration = 1000, easeType = EASE_NONE, bool:silent = false);
 native PlayerText_PlaceOnTop(playerid, PlayerText:textdraw);
 native PlayerText_StopAnimation(animator_id);
 native IsAnimationActive(animator_id);
