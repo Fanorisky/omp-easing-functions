@@ -651,6 +651,7 @@ public:
         core->printLn("  Animation Pool: dynamic (starts at %d, grows on demand)", Config::initialAnimCapacity);
         core->printLn("  Update Rate: %d FPS (%d ms)", Config::updateRateFps, intervalMs);
         core->printLn("  Batch Limit: %d per frame", Config::batchProcessLimit);
+        core->printLn("  Author: Fanorisky (https://github.com/Fanorisky/omp-easing-functions)");
         core->printLn(" ");
         
         setAmxLookups(core);
