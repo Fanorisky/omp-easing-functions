@@ -64,12 +64,27 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-    
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Detect Visual Studio generator
+        id: vs
+        shell: powershell
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $version = & $vswhere -latest -products * -property catalog_productLineVersion
+          if ($version -eq "2022") { $gen = "Visual Studio 17 2022" }
+          elseif ($version -eq "2019") { $gen = "Visual Studio 16 2019" }
+          else { Write-Error "No supported Visual Studio instance found"; exit 1 }
+          Write-Host "Using generator: $gen"
+          "generator=$gen" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Configure CMake for 32-bit
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G "${{ steps.vs.outputs.generator }}" -A Win32 -DCMAKE_BUILD_TYPE=Release
         shell: powershell
-    
+
       - name: Build
         run: |
           cmake --build build --config Release --parallel
