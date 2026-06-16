@@ -79,6 +79,7 @@ jobs:
           Write-Host "Detected installationVersion: $instVer"
           $major = ($instVer -split '\.')[0]
           switch ($major) {
+            "18" { $gen = "Visual Studio 18 2026" }
             "17" { $gen = "Visual Studio 17 2022" }
             "16" { $gen = "Visual Studio 16 2019" }
             default { Write-Error "No supported Visual Studio instance found (installationVersion='$instVer')"; exit 1 }
