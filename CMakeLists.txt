@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(omp-easing-functions LANGUAGES C CXX VERSION 0.0.1)
+project(omp-easing-functions LANGUAGES C CXX VERSION 1.0.2)
 
 set(CMAKE_CXX_STANDARD 17)
 

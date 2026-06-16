@@ -634,7 +634,15 @@ public:
             Config::initialAnimCapacity = *initialCap;
         if (int* cbReserve = config.getInt("easing.callback_reserve"))
             Config::callbackReserve = *cbReserve;
-            
+
+        // Clamp config to safe ranges so bad config.json values can't crash the
+        // server (negative reserve() throws, fps <= 0 breaks the timer interval).
+        if (Config::updateRateFps < 1) Config::updateRateFps = 30;
+        if (Config::batchProcessLimit < 0) Config::batchProcessLimit = 0;  // 0 = no limit
+        if (Config::expectedPlayers < 0) Config::expectedPlayers = 0;
+        if (Config::initialAnimCapacity < 0) Config::initialAnimCapacity = 0;
+        if (Config::callbackReserve < 0) Config::callbackReserve = 0;
+
         // Calculate MS from FPS for internal timer
         int intervalMs = 1000 / (Config::updateRateFps > 0 ? Config::updateRateFps : 30);
             
