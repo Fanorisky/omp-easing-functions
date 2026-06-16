@@ -90,6 +90,8 @@ native GetAnimationStats(&totalCreated, &peakConcurrent, &totalCallbacks, &silen
 OnAnimatorFinish(playerid, animatorid, textdrawid, type);
 ```
 
+> **Note:** `animatorid` (the value returned by the animation natives and passed here) is an **opaque handle**, not a sequential index. It encodes an internal generation counter, so the numbers are not small or ordered and recycled slots never reuse an old id. Just store it as-is, compare it, and pass it to `IsAnimationActive` / `PlayerText_StopAnimation` — do **not** use it as an array index. `textdrawid` is unaffected and remains the normal PlayerTextDraw id.
+
 ---
 
 ## Easing Types
