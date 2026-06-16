@@ -615,7 +615,7 @@ public:
     
     SemanticVersion componentVersion() const override
     {
-        return SemanticVersion(1, 0, 2, 0);
+        return SemanticVersion(1, 0, 3, 0);
     }
     
     void onLoad(ICore* c) override
