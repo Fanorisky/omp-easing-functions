@@ -73,10 +73,16 @@ jobs:
         shell: powershell
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $version = & $vswhere -latest -products * -property catalog_productLineVersion
-          if ($version -eq "2022") { $gen = "Visual Studio 17 2022" }
-          elseif ($version -eq "2019") { $gen = "Visual Studio 16 2019" }
-          else { Write-Error "No supported Visual Studio instance found"; exit 1 }
+          if (-not (Test-Path $vswhere)) { Write-Error "vswhere.exe not found"; exit 1 }
+          # installationVersion is reliably populated; derive the major version from it
+          $instVer = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion
+          Write-Host "Detected installationVersion: $instVer"
+          $major = ($instVer -split '\.')[0]
+          switch ($major) {
+            "17" { $gen = "Visual Studio 17 2022" }
+            "16" { $gen = "Visual Studio 16 2019" }
+            default { Write-Error "No supported Visual Studio instance found (installationVersion='$instVer')"; exit 1 }
+          }
           Write-Host "Using generator: $gen"
           "generator=$gen" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
